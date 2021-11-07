@@ -3,7 +3,7 @@
 
 ## 前言
 + 这是本人第一次写技术文档，也是蛮紧张的，如果有不足之处还请指教。
-+ 该文章主要介绍redux工作原理，以及`redux`,`redux-saga`,`react-redux`部分源码解读，通过该文章你将会收获`Flux架构`理念，函数式编程，中间件机制以及redux在react中的工作方式。
++ 该文章主要分析redux理念，`中间件`机制，`enhancer`插件机制及工作原理，以及`redux`,`redux-saga`,`react-redux`部分源码解读，通过该文章你将会收获`Flux架构`理念，函数式编程，以及redux在react中的工作方式。
 + 本文章适合有一定redux基础，或者使用过redux的童鞋，如果你对redux还不是很熟，可以先阅读[官方文档](https://redux.js.org/)了解redux.
 
 ## Flux架构理念
@@ -84,30 +84,48 @@
          + Vue可以同步获取数据，而`React`获取数据的方式是异步的。
         *****
          + **分析**：在上面的代码中，我们注意到`console.log(state)`并没有获取到新set的数据,`useState`函数执行完成的时候，`return`的数据始终被拉在外层作用域，其实问题就出在`state = newValue`,当`newValue`直接将整个数据替换成了`state`,如果原`state`是引用数据类型，那么它的内存地址也将改变，而原先返回的return数据依然是之前的引用。基于上面的案列，我们不能同步拿到当前`state`的数据，那么有没有其他方式同步拿到新的`state`呢？请看下面的代码
-         ```javascript
-         function useState(initState) {
-           let state = initState || undefined;
+            ```javascript
+            function useState(initState) {
+              let state = initState || undefined;
 
-           const setState = (newValue) => {
-             state = newValue;
-             console.log(`已监听数据变化, 设置新的state为${newValue}`);
-           }
-           //这里新增了一个getState
-           const getState = () => { // ++++
-             return state
-           }
+              const setState = (newValue) => {
+                state = newValue;
+                console.log(`已监听数据变化, 设置新的state为${newValue}`);
+              }
+              //这里新增了一个getState
+              const getState = () => { // ++++
+                return state
+              }
 
-           return [
-             state,
-             setState,
-             getState // ++++ 并将getState返回
-           ]
-         }
+              return [
+                state,
+                setState,
+                getState // ++++ 并将getState返回
+              ]
+            }
 
-         const [state, setState, getState] = useState(1);
-         setState(2)
-         setState(3)
-         console.log(state);
-         console.log(getState());  // ++++ 当我们调用getState方式时,会直接从函数内部的state获取数据
-         ```
+            const [state, setState, getState] = useState(1);
+            setState(2)
+            setState(3)
+            console.log(state);
+            console.log(getState());  // ++++ 当我们调用getState方式时,会直接从函数内部的state获取数据
+            ```
         ****
+4. createStore 创建redux仓库
+    + 为什么redux只能有一个仓库
+        + 在[redux官方文档](https://redux.js.org/api/createstore)中对`createStore`有这样的描述。Creates a Redux store that holds the complete state tree of your app. There should only be a single store in your app.
+        + 对于这个问题，我一直想不明白为什么一个应用中只能拥有一个仓库。比如在`react-keep-alive`组件中就用到了redux，而我们自己也可以在全局创建Store，在单独的自模块中也可以创建store.且createStore本身在创建时就可以创建独立的闭包作用域去单独管理他们各自的状态。带着疑惑，我咨询了专业的大佬,于是得到了这样的结论。
+        + redux的目的就是实现应用`中央状态的集中管理`，这种违背了redux理念的初衷。当单个应用变得复杂时，建议使用`combineReducer`去拆分模块，而不是新建仓库。但是我们可以，在不同的应用中创建不同的store,然后去独立管理。
+    + createStore结构
+      + 我们先来通过简化后的源码分析一下create结构
+        ```javascript
+        function createStore(reducer, preloadedState, enhancer) {
+          // 省略中间代码
+          return {
+            dispatch,
+            subscribe,
+            getState,
+          }
+        }
+        ```
+        通过上述代码，我们可以清晰的看到createStore一共接受三个参数，`reducer`，`preloadedState`，`enhancer`，并返回了`dispatch`，`subscribe`，`getState`等方法。
